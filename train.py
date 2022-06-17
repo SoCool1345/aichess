@@ -33,7 +33,7 @@ class TrainPipeline:
         self.n_playout = CONFIG['play_out']
         self.c_puct = CONFIG['c_puct']
         self.learn_rate = 1e-3
-        self.lr_multiplier = 1  # 基于KL自适应的调整学习率
+        self.lr_multiplier = 0.088  # 基于KL自适应的调整学习率
         self.temp = 1.0
         self.batch_size = CONFIG['batch_size']  # 训练的batch大小
         self.epochs = CONFIG['epochs']  # 每次更新的train_step数量
@@ -147,17 +147,6 @@ class TrainPipeline:
         try:
             for i in range(self.game_batch_num):
                 time.sleep(CONFIG['train_update_interval'])  # 每10分钟更新一次模型
-                # while True:
-                #     try:
-                #         with open(CONFIG['train_data_buffer_path'], 'rb') as data_dict:
-                #             data_file = pickle.load(data_dict)
-                #             self.data_buffer = data_file['data_buffer']
-                #             self.iters = data_file['iters']
-                #             del data_file
-                #         print('已载入数据')
-                #         break
-                #     except:
-                #         time.sleep(30)
                 while True:
                     try:
                         l = len(self.data_buffer)
@@ -165,7 +154,8 @@ class TrainPipeline:
                         self.data_buffer.extend(data)
                         self.iters = self.redis_cli.get('iters')
                         if self.redis_cli.llen('train_data_buffer') > self.buffer_size:
-                            self.redis_cli.lpop('train_data_buffer',self.buffer_size/10)
+                            for _ in range((int)(self.buffer_size/10)):
+                                self.redis_cli.lpop('train_data_buffer')
                         break
                     except:
                         time.sleep(5)
