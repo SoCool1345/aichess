@@ -165,10 +165,10 @@ class TrainPipeline:
                     # 保存模型
                     if CONFIG['use_frame'] == 'paddle':
                         self.policy_value_net.save_model(CONFIG['paddle_model_path'])
-                        self.redis_cli.set('update_model_flag', True)
+                        self.redis_cli.incr('update_model_version')
                     elif CONFIG['use_frame'] == 'pytorch':
                         self.policy_value_net.save_model(CONFIG['pytorch_model_path'])
-                        self.redis_cli.set('update_model_flag', True)
+                        self.redis_cli.incr('update_model_version')
                     else:
                         print('不支持所选框架')
                 if (i + 1) % self.check_freq == 0:

@@ -33,6 +33,7 @@ class CollectPipeline:
         self.buffer_size = CONFIG['buffer_size']  # 经验池大小
         self.data_buffer = deque(maxlen=self.buffer_size)
         self.iters = 0
+        self.update_model_version = 0
         self.redis_cli = my_redis.get_redis_cli()
 
     # 从主体加载模型
@@ -77,10 +78,10 @@ class CollectPipeline:
     def collect_selfplay_data(self, n_games=1):
         # 收集自我对弈的数据
         for i in range(n_games):
-            update_model_flag = self.redis_cli.get('update_model_flag')
-            if update_model_flag:
+            version = self.redis_cli.get('update_model_version')
+            if self.update_model_version != version:
                 self.policy_value_net.update_state(self.model_path) # 从本体处加载最新模型
-                self.redis_cli.set('update_model_flag',False)
+                self.update_model_version = version
                 print('已更新模型参数')
             winner, play_data = self.game.start_self_play(self.mcts_player, temp=self.temp, is_shown=False)
             play_data = list(play_data)[:]
