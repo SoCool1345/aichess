@@ -81,6 +81,7 @@ class CollectPipeline:
             if update_model_flag:
                 self.policy_value_net.update_state(self.model_path) # 从本体处加载最新模型
                 self.redis_cli.set('update_model_flag',False)
+                print('已更新模型参数')
             winner, play_data = self.game.start_self_play(self.mcts_player, temp=self.temp, is_shown=False)
             play_data = list(play_data)[:]
             self.episode_len = len(play_data)
