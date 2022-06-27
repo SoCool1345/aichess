@@ -38,13 +38,13 @@ class CollectPipeline:
     # 从主体加载模型
     def load_model(self):
         if CONFIG['use_frame'] == 'paddle':
-            model_path = CONFIG['paddle_model_path']
+            self.model_path = CONFIG['paddle_model_path']
         elif CONFIG['use_frame'] == 'pytorch':
-            model_path = CONFIG['pytorch_model_path']
+            self.model_path = CONFIG['pytorch_model_path']
         else:
             print('暂不支持所选框架')
         try:
-            self.policy_value_net = PolicyValueNet(model_file=model_path)
+            self.policy_value_net = PolicyValueNet(model_file=self.model_path)
             print('已加载最新模型')
         except:
             self.policy_value_net = PolicyValueNet()
@@ -77,7 +77,10 @@ class CollectPipeline:
     def collect_selfplay_data(self, n_games=1):
         # 收集自我对弈的数据
         for i in range(n_games):
-            self.load_model()  # 从本体处加载最新模型
+            update_model_flag = self.redis_cli.get('update_model_flag')
+            if update_model_flag:
+                self.policy_value_net.update_state(self.model_path) # 从本体处加载最新模型
+                self.redis_cli.set('update_model_flag',False)
             winner, play_data = self.game.start_self_play(self.mcts_player, temp=self.temp, is_shown=False)
             play_data = list(play_data)[:]
             self.episode_len = len(play_data)
@@ -95,32 +98,12 @@ class CollectPipeline:
                 except:
                     print("存储失败")
                     time.sleep(1)
-            # if os.path.exists(CONFIG['train_data_buffer_path']):
-            #     while True:
-            #         try:
-            #             with open(CONFIG['train_data_buffer_path'], 'rb') as data_dict:
-            #                 data_file = pickle.load(data_dict)
-            #                 self.data_buffer = deque(maxlen=self.buffer_size)
-            #                 self.data_buffer.extend(data_file['data_buffer'])
-            #                 self.iters = data_file['iters']
-            #                 del data_file
-            #                 self.iters += 1
-            #                 self.data_buffer.extend(play_data)
-            #             print('成功载入数据')
-            #             break
-            #         except:
-            #             time.sleep(30)
-            # else:
-            #     self.data_buffer.extend(play_data)
-            #     self.iters += 1
-            # data_dict = {'data_buffer': self.data_buffer, 'iters': self.iters}
-            # with open(CONFIG['train_data_buffer_path'], 'wb') as data_file:
-            #     pickle.dump(data_dict, data_file)
         return self.iters
 
     def run(self):
         """开始收集数据"""
         try:
+            self.load_model()
             while True:
                 iters = self.collect_selfplay_data()
                 print('batch i: {}, episode_len: {}'.format(
