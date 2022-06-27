@@ -1,6 +1,5 @@
 """策略价值网络"""
 
-
 import torch
 import torch.nn as nn
 import numpy as np
@@ -14,10 +13,12 @@ class ResBlock(nn.Module):
 
     def __init__(self, num_filters=256):
         super().__init__()
-        self.conv1 = nn.Conv2d(in_channels=num_filters, out_channels=num_filters, kernel_size=(3, 3), stride=(1, 1), padding=1)
+        self.conv1 = nn.Conv2d(in_channels=num_filters, out_channels=num_filters, kernel_size=(3, 3), stride=(1, 1),
+                               padding=1)
         self.conv1_bn = nn.BatchNorm2d(num_filters, )
         self.conv1_act = nn.ReLU()
-        self.conv2 = nn.Conv2d(in_channels=num_filters, out_channels=num_filters, kernel_size=(3, 3), stride=(1, 1), padding=1)
+        self.conv2 = nn.Conv2d(in_channels=num_filters, out_channels=num_filters, kernel_size=(3, 3), stride=(1, 1),
+                               padding=1)
         self.conv2_bn = nn.BatchNorm2d(num_filters, )
         self.conv2_act = nn.ReLU()
 
@@ -40,7 +41,8 @@ class Net(nn.Module):
         # self.global_conv = nn.Conv2D(in_channels=9, out_channels=512, kernel_size=(10, 9))
         # self.global_bn = nn.BatchNorm2D(512)
         # 初始化特征
-        self.conv_block = nn.Conv2d(in_channels=9, out_channels=num_channels, kernel_size=(3, 3), stride=(1, 1), padding=1)
+        self.conv_block = nn.Conv2d(in_channels=9, out_channels=num_channels, kernel_size=(3, 3), stride=(1, 1),
+                                    padding=1)
         self.conv_block_bn = nn.BatchNorm2d(256)
         self.conv_block_act = nn.ReLU()
         # 残差块抽取特征
@@ -89,13 +91,19 @@ class Net(nn.Module):
 # 策略值网络，用来进行模型的训练
 class PolicyValueNet:
 
-    def __init__(self, model_file=None, use_gpu=True, device = 'cuda'):
+    def __init__(self, model_file=None, use_gpu=True, device='cuda'):
         self.use_gpu = use_gpu
-        self.l2_const = 2e-3    # l2 正则化
+        self.l2_const = 2e-3  # l2 正则化
         self.device = device
         torch.backends.cudnn.benchmark = True
         self.policy_value_net = Net().to(self.device)
-        self.optimizer = torch.optim.Adam(params=self.policy_value_net.parameters(), lr=1e-3, betas=(0.9, 0.999), eps=1e-8, weight_decay=self.l2_const)
+        self.optimizer = torch.optim.Adam(params=self.policy_value_net.parameters(), lr=1e-3, betas=(0.9, 0.999),
+                                          eps=1e-8, weight_decay=self.l2_const)
+        self.update_state(model_file)
+
+        # 更新模型参数
+
+    def update_state(self, model_file=None):
         if model_file:
             self.policy_value_net.load_state_dict(torch.load(model_file))  # 加载模型参数
 
@@ -116,10 +124,11 @@ class PolicyValueNet:
         current_state = np.ascontiguousarray(board.current_state().reshape(-1, 9, 10, 9)).astype('float16')
         current_state = torch.as_tensor(current_state).to(self.device)
         # 使用神经网络进行预测
-        with autocast(): #半精度fp16
+        with autocast():  # 半精度fp16
             log_act_probs, value = self.policy_value_net(current_state)
-        log_act_probs, value = log_act_probs.cpu() , value.cpu()
-        act_probs = np.exp(log_act_probs.numpy().flatten()) if CONFIG['use_frame'] == 'paddle' else np.exp(log_act_probs.detach().numpy().astype('float16').flatten())
+        log_act_probs, value = log_act_probs.cpu(), value.cpu()
+        act_probs = np.exp(log_act_probs.numpy().flatten()) if CONFIG['use_frame'] == 'paddle' else np.exp(
+            log_act_probs.detach().numpy().astype('float16').flatten())
         # 只取出合法动作
         act_probs = zip(legal_positions, act_probs[legal_positions])
         # 返回动作概率，以及状态价值

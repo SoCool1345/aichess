@@ -101,6 +101,10 @@ class PolicyValueNet:
         self.optimizer = paddle.optimizer.Adam(learning_rate=0.001,
                                                parameters=self.policy_value_net.parameters(),
                                                weight_decay=self.l2_const)
+        self.update_state(model_file)
+
+    #更新模型参数
+    def update_state(self,model_file=None):
         if model_file:
             net_params = paddle.load(model_file)
             self.policy_value_net.set_state_dict(net_params)
