@@ -8,6 +8,8 @@ import numpy as np
 import pickle
 import time
 
+import torch
+
 import zip_array
 from config import CONFIG
 from game import Game, Board
@@ -33,7 +35,7 @@ class TrainPipeline:
         self.n_playout = CONFIG['play_out']
         self.c_puct = CONFIG['c_puct']
         self.learn_rate = 1e-3
-        self.lr_multiplier = 0.088  # 基于KL自适应的调整学习率
+        self.lr_multiplier = 1  # 基于KL自适应的调整学习率
         self.temp = 1.0
         self.batch_size = CONFIG['batch_size']  # 训练的batch大小
         self.epochs = CONFIG['epochs']  # 每次更新的train_step数量
@@ -83,23 +85,23 @@ class TrainPipeline:
 
 
     def policy_updata(self):
-        """更新策略价值网络"""
-        mini_batch = random.sample(self.data_buffer, self.batch_size)
-        # print(mini_batch[0][1],mini_batch[1][1])
-        mini_batch = [zip_array.recovery_state_mcts_prob(data) for data in mini_batch]
-        state_batch = [data[0] for data in mini_batch]
-        state_batch = np.array(state_batch).astype('float32')
-
-        mcts_probs_batch = [data[1] for data in mini_batch]
-        mcts_probs_batch = np.array(mcts_probs_batch).astype('float32')
-
-        winner_batch = [data[2] for data in mini_batch]
-        winner_batch = np.array(winner_batch).astype('float32')
-
-        # 旧的策略，旧的价值函数
-        old_probs, old_v = self.policy_value_net.policy_value(state_batch)
 
         for i in range(self.epochs):
+            """更新策略价值网络"""
+            mini_batch = random.sample(self.data_buffer, self.batch_size)
+            mini_batch = [zip_array.recovery_state_mcts_prob(data) for data in mini_batch]
+            state_batch = [data[0] for data in mini_batch]
+            state_batch = np.array(state_batch).astype('float32')
+
+            mcts_probs_batch = [data[1] for data in mini_batch]
+            mcts_probs_batch = np.array(mcts_probs_batch).astype('float32')
+
+            winner_batch = [data[2] for data in mini_batch]
+            winner_batch = np.array(winner_batch).astype('float32')
+
+            # 旧的策略，旧的价值函数
+            old_probs, old_v = self.policy_value_net.policy_value(state_batch)
+
             loss, entropy = self.policy_value_net.train_step(
                 state_batch,
                 mcts_probs_batch,
@@ -146,7 +148,7 @@ class TrainPipeline:
         """开始训练"""
         try:
             for i in range(self.game_batch_num):
-                time.sleep(CONFIG['train_update_interval'])  # 每10分钟更新一次模型
+
                 while True:
                     try:
                         l = len(self.data_buffer)
@@ -186,6 +188,8 @@ class TrainPipeline:
                     #         self.best_win_ratio = 0.0
                     print("current self-play batch: {}".format(i + 1))
                     self.policy_value_net.save_model('models/current_policy_batch{}.model'.format(i + 1))
+                torch.cuda.empty_cache()
+                time.sleep(CONFIG['train_update_interval'])  # 每10分钟更新一次模型
         except KeyboardInterrupt:
             print('\n\rquit')
 
