@@ -8,7 +8,7 @@ import time
 import my_redis, redis
 import zip_array
 from game import Board, Game, move_action2move_id, move_id2move_action, flip_map
-from mcts import MCTSPlayer
+from batch_mcts import MCTSPlayer
 from config import CONFIG
 
 if CONFIG['use_frame'] == 'paddle':

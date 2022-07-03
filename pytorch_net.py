@@ -124,22 +124,30 @@ class PolicyValueNet:
         return act_probs, value.detach().numpy()
 
     # 输入棋盘，返回每个合法动作的（动作，概率）元组列表，以及棋盘状态的分数
-    def policy_value_fn(self, board):
+    def policy_value_fn(self, board_list):
         self.policy_value_net.eval()
         # 获取合法动作列表
-        legal_positions = board.availables
-        current_state = np.ascontiguousarray(board.current_state().reshape(-1, 9, 10, 9)).astype('float16')
+        legal_positions = [board.availables for board in board_list]
+        current_state_list = [np.ascontiguousarray(board.current_state().reshape(-1, 9, 10, 9)).astype('float16') for board in board_list]
+        if len(current_state_list) > 1:
+            current_state = np.concatenate(current_state_list)
+        else:
+            current_state = current_state_list[0]
+        # print(current_state.shape)
         current_state = torch.as_tensor(current_state,device=self.device)
         # 使用神经网络进行预测
         with autocast():  # 半精度fp16
             log_act_probs, value = self.policy_value_net(current_state)
         log_act_probs, value = log_act_probs.cpu(), value.cpu()
-        act_probs = np.exp(log_act_probs.numpy().astype('float16').flatten()) if CONFIG['use_frame'] == 'paddle' else np.exp(
-            log_act_probs.detach().numpy().astype('float16').flatten())
-        # 只取出合法动作
-        act_probs = zip(legal_positions, act_probs[legal_positions])
+        act_prob_list = []
+        for i in range(len(log_act_probs)):
+            act_probs = np.exp(log_act_probs[i].numpy().astype('float16').flatten()) if CONFIG['use_frame'] == 'paddle' else np.exp(
+                log_act_probs[i].detach().numpy().astype('float16').flatten())
+            # 只取出合法动作
+            act_probs = zip(legal_positions[i], act_probs[legal_positions[i]])
+            act_prob_list.append(act_probs)
         # 返回动作概率，以及状态价值
-        return act_probs, value.detach().numpy()
+        return np.asarray(act_prob_list), value.detach().numpy()
 
     # 保存模型
     def save_model(self, model_file):

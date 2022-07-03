@@ -1,5 +1,5 @@
 """蒙特卡洛树搜索"""
-
+import asyncio
 
 import numpy as np
 import copy
@@ -23,6 +23,7 @@ class TreeNode(object):
         """
         :param parent: 当前节点的父节点
         :param prior_p:  当前节点被选择的先验概率
+        :param in_state: 当前节点的状态
         """
         self._parent = parent
         self._children = {} # 从动作到TreeNode的映射
@@ -30,12 +31,23 @@ class TreeNode(object):
         self._Q = 0         # 当前节点对应动作的平均动作价值
         self._u = 0         # 当前节点的置信上限         # PUCT算法
         self._P = prior_p
+        self.is_expending = False
+
+    def add_virtual_value(self, value):
+        """
+        计算节点的虚拟损失
+        """
+        self._Q -= value
+        self._n_visits += value
+
+
 
     def expand(self, action_priors):    # 这里把不合法的动作概率全部设置为0
         """通过创建新子节点来展开树"""
         for action, prob in action_priors:
             if action not in self._children:
                 self._children[action] =  TreeNode(self, prob)
+        self.is_expending = False
 
     def select(self, c_puct):
         """
@@ -90,46 +102,70 @@ class MCTS(object):
         self._c_puct = c_puct
         self._n_playout = n_playout
 
-    def _playout(self, state):
+        self.virtual_loss = 3
+        self.search_batch_size = 32
+
+
+
+    def _playout(self, board):
         """
         进行一次搜索，根据叶节点的评估值进行反向更新树节点的参数
         注意：state已就地修改，因此必须提供副本
         """
-        node = self._root
-        while True:
-            if node.is_leaf():
-                break
-            # 贪心算法选择下一步行动
-            action, node = node.select(self._c_puct)
-            state.do_move(action)
+        board_list = []
+        node_list = []
 
-        # 使用网络评估叶子节点，网络输出（动作，概率）元组p的列表以及当前玩家视角的得分[-1, 1]
-        action_probs, leaf_value = self._policy(state)
-        # 查看游戏是否结束
-        end, winner = state.game_end()
-        if not end:
-            node.expand(action_probs)
-        else:
-            # 对于结束状态，将叶子节点的值换成1或-1
-            if winner == -1:    # Tie
-                leaf_value = 0.0
+        for _ in range(self.search_batch_size):
+            node = self._root
+            _board = copy.deepcopy(board)
+            while True:
+                if node.is_leaf():
+                    break
+                # 贪心算法选择下一步行动
+                action, node = node.select(self._c_puct)
+                _board.do_move(action)
+            if not node.is_expending and  node._P > 0 :
+                node.is_expending = True
+                node.add_virtual_value(self.virtual_loss)
+                board_list.append(_board)
+                node_list.append(node)
             else:
-                leaf_value = (
-                    1.0 if winner == state.get_current_player_id() else -1.0
-                )
-        # 在本次遍历中更新节点的值和访问次数
-        # 必须添加符号，因为两个玩家共用一个搜索树
-        node.update_recursive(-leaf_value)
+                break
+        # 使用网络评估叶子节点，网络输出（动作，概率）元组p的列表以及当前玩家视角的得分[-1, 1]
 
-    def get_move_probs(self, state, temp=1e-3):
+        action_prob_list, leaf_value_list = self._policy(board_list)
+
+        for node, action_probs,leaf_value in zip(node_list, action_prob_list,leaf_value_list):
+            node.add_virtual_value(-self.virtual_loss)
+            node.is_expending = False
+            # 查看游戏是否结束
+            end, winner = _board.game_end()
+            if not end:
+                node.expand(action_probs)
+            else:
+                # 对于结束状态，将叶子节点的值换成1或-1
+                if winner == -1:    # Tie
+                    leaf_value = 0.0
+                else:
+                    leaf_value = (
+                        1.0 if winner == _board.get_current_player_id() else -1.0
+                    )
+            # 在本次遍历中更新节点的值和访问次数
+            # 必须添加符号，因为两个玩家共用一个搜索树
+            node.update_recursive(-leaf_value)
+
+
+
+
+
+    def get_move_probs(self, board, temp=1e-3):
         """
         按顺序运行所有搜索并返回可用的动作及其相应的概率
         state:当前游戏的状态
         temp:介于（0， 1]之间的温度参数
         """
-        for n in range(self._n_playout):
-            state_copy = copy.deepcopy(state)
-            self._playout(state_copy)
+        for n in range(self._n_playout//self.search_batch_size):
+            self._playout(board)
 
         # 跟据根节点处的访问计数来计算移动概率
         act_visits= [(act, node._n_visits)
