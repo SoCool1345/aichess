@@ -131,6 +131,8 @@ class MCTS(object):
                 node_list.append(node)
             else:
                 break
+            if len(board_list) == 0:
+                return
         # 使用网络评估叶子节点，网络输出（动作，概率）元组p的列表以及当前玩家视角的得分[-1, 1]
 
         action_prob_list, leaf_value_list = self._policy(board_list)

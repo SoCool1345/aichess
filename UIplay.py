@@ -202,11 +202,11 @@ start_player = 1
 
 player1 = MCTSPlayer(policy_value_net.policy_value_fn,
                      c_puct=5,
-                     n_playout=500,
+                     n_playout=1200,
                      is_selfplay=0)
 player2 = MCTSPlayer(policy_value_net.policy_value_fn,
                      c_puct=5,
-                     n_playout=500,
+                     n_playout=1200,
                      is_selfplay=0)
 
 
@@ -267,7 +267,6 @@ while True:
         player_in_turn = players[current_player]  # 决定当前玩家的代理
 
     if player_in_turn.agent == 'AI':
-        pygame.display.update()
         start_time = time.time()
         move = player_in_turn.get_action(board)  # 当前玩家代理拿到动作
         print('耗时：', time.time() - start_time)
@@ -284,11 +283,12 @@ while True:
                 swicth_player = True
                 move_action = ''
                 draw_fire = False
-
+    pygame.display.update()
     end, winner = board.game_end()
     if end:
         if winner != -1:
             print("Game end. Winner is", players[winner])
         else:
             print("Game end. Tie")
+        time.sleep(10)
         sys.exit()
