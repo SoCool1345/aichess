@@ -6,8 +6,7 @@ from game import move_action2move_id, Game, Board
 from batch_mcts import MCTSPlayer
 import time
 from config import CONFIG
-
-
+from mcts_pure import MCTS_Pure
 
 if CONFIG['use_frame'] == 'paddle':
     from paddle_net import PolicyValueNet
@@ -204,10 +203,12 @@ player1 = MCTSPlayer(policy_value_net.policy_value_fn,
                      c_puct=5,
                      n_playout=1200,
                      is_selfplay=0)
-player2 = MCTSPlayer(policy_value_net.policy_value_fn,
-                     c_puct=5,
-                     n_playout=1200,
-                     is_selfplay=0)
+# player2 = MCTSPlayer(policy_value_net.policy_value_fn,
+#                      c_puct=5,
+#                      n_playout=1200,
+#                      is_selfplay=0)
+
+player2 = MCTS_Pure(c_puct=5,n_playout=10)
 
 
 # player2 = Human()

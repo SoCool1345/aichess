@@ -1,5 +1,6 @@
 """蒙特卡洛树搜索"""
 import asyncio
+import multiprocessing.connection
 
 import numpy as np
 import copy
@@ -30,6 +31,7 @@ class TreeNode(object):
         self._n_visits = 0  # 当前当前节点的访问次数
         self._Q = 0         # 当前节点对应动作的平均动作价值
         self._u = 0         # 当前节点的置信上限         # PUCT算法
+        self.W = 0
         self._P = prior_p
         self.is_expending = False
 
@@ -91,14 +93,18 @@ class TreeNode(object):
     def is_root(self):
         return self._parent is None
 
+    @property
+    def P(self):
+        return self._P
+
 
 # 蒙特卡洛搜索树
 class MCTS(object):
 
-    def __init__(self, policy_value_fn, c_puct=5, n_playout=2000):
+    def __init__(self, pipe, c_puct=5, n_playout=2000):
         """policy_value_fn: 接收board的盘面状态，返回落子概率和盘面评估得分"""
         self._root = TreeNode(None, 1.0)
-        self._policy = policy_value_fn
+        self.pipe = pipe # (input,output)
         self._c_puct = c_puct
         self._n_playout = n_playout
 
@@ -119,12 +125,14 @@ class MCTS(object):
             node = self._root
             _board = copy.deepcopy(board)
             while True:
-                if node.is_leaf():
+                if node.is_leaf() or node.is_expending:
                     break
                 # 贪心算法选择下一步行动
                 action, node = node.select(self._c_puct)
+                if action not in _board.availables:
+                    print(action)
                 _board.do_move(action)
-            if not node.is_expending and  node._P > 0 :
+            if not node.is_expending:
                 node.is_expending = True
                 node.add_virtual_value(self.virtual_loss)
                 board_list.append(_board)
@@ -134,10 +142,14 @@ class MCTS(object):
             if len(board_list) == 0:
                 return
         # 使用网络评估叶子节点，网络输出（动作，概率）元组p的列表以及当前玩家视角的得分[-1, 1]
+        input, output = self.pipe
+        conn1, conn2 = output # type: multiprocessing.connection.Connection
+        conn2.send(board_list)
+        conn1, conn2 = input
+        action_prob_list, leaf_value_list = conn1.recv()
+        # print(multiprocessing.current_process().pid)
 
-        action_prob_list, leaf_value_list = self._policy(board_list)
-
-        for node, action_probs,leaf_value in zip(node_list, action_prob_list,leaf_value_list):
+        for node, action_probs,leaf_value,_board in zip(node_list, action_prob_list,leaf_value_list,board_list):
             node.add_virtual_value(-self.virtual_loss)
             node.is_expending = False
             # 查看游戏是否结束
@@ -193,8 +205,8 @@ class MCTS(object):
 # 基于MCTS的AI玩家
 class MCTSPlayer(object):
 
-    def __init__(self, policy_value_function, c_puct=5, n_playout=2000, is_selfplay=0):
-        self.mcts = MCTS(policy_value_function, c_puct, n_playout)
+    def __init__(self, pipe, c_puct=5, n_playout=2000, is_selfplay=0):
+        self.mcts = MCTS(pipe, c_puct, n_playout)
         self._is_selfplay = is_selfplay
         self.agent = "AI"
 

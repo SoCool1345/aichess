@@ -3,7 +3,6 @@ import pickle
 from config import CONFIG
 import redis
 
-from pytorch_net import PolicyValueNet
 
 
 def get_redis_cli():
@@ -14,8 +13,8 @@ def get_list_range(redis_cli,name,l,r=-1):
     list = redis_cli.lrange(name,l,r)
     return [pickle.loads(d) for d in list]
 
-if __name__ == '__main__':
-    r = get_redis_cli()
+# if __name__ == '__main__':
+#     r = get_redis_cli()
     # with open(CONFIG['train_data_buffer_path'], 'rb') as data_dict:
     #     data_file = pickle.load(data_dict)
     #     data_buffer = data_file['data_buffer']
@@ -28,9 +27,9 @@ if __name__ == '__main__':
     #     for i in range(7000):
     #         r.lpop('train_data_buffer')
 
-    policy_value_net = PolicyValueNet()
-    s = pickle.dumps(policy_value_net)
-    print(policy_value_net)
+    # policy_value_net = PolicyValueNet()
+    # s = pickle.dumps(policy_value_net)
+    # print(policy_value_net)
     # t = pickle.loads(s)
     # print(t)
     # print(r.get('a'))

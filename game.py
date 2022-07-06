@@ -1,4 +1,5 @@
 """棋盘游戏控制"""
+import multiprocessing
 
 import numpy as np
 import copy
@@ -811,7 +812,7 @@ class Game(object):
                 move, move_probs = player.get_action(self.board,
                                                      temp=temp,
                                                      return_prob=1)
-                print('走一步要花: ', time.time() - start_time)
+                print(multiprocessing.current_process().pid,':走一步要花: ', time.time() - start_time)
             else:
                 move, move_probs = player.get_action(self.board,
                                                      temp=temp,

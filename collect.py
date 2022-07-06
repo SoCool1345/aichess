@@ -1,4 +1,10 @@
 """自我对弈收集数据"""
+
+from multiprocessing import Process, Manager, Pool, freeze_support, current_process, Pipe
+from config import CONFIG
+
+
+
 import random
 from collections import deque
 import copy
@@ -8,21 +14,24 @@ import time
 import my_redis, redis
 import zip_array
 from game import Board, Game, move_action2move_id, move_id2move_action, flip_map
-from batch_mcts import MCTSPlayer
-from config import CONFIG
+from multi_batch_mcts import MCTSPlayer
 
-if CONFIG['use_frame'] == 'paddle':
-    from paddle_net import PolicyValueNet
-elif CONFIG['use_frame'] == 'pytorch':
-    from pytorch_net import PolicyValueNet
-else:
-    print('暂不支持您选择的框架')
+
+
+# if CONFIG['use_frame'] == 'paddle':
+#     from paddle_net import PolicyValueNet
+# elif CONFIG['use_frame'] == 'pytorch':
+#     from pytorch_net import PolicyValueNet
+# else:
+#     print('暂不支持您选择的框架')
 
 
 # 定义整个对弈收集数据流程
-class CollectPipeline:
+class CollectPipeline(Process):
 
-    def __init__(self, init_model=None):
+
+    def __init__(self,pipes):
+        Process.__init__(self)
         # 象棋逻辑和棋盘
         self.board = Board()
         self.game = Game(self.board)
@@ -30,30 +39,11 @@ class CollectPipeline:
         self.temp = 1  # 温度
         self.n_playout = CONFIG['play_out']  # 每次移动的模拟次数
         self.c_puct = CONFIG['c_puct']  # u的权重
-        self.buffer_size = CONFIG['buffer_size']  # 经验池大小
-        self.data_buffer = deque(maxlen=self.buffer_size)
         self.iters = 0
-        self.update_model_version = 0
-        self.redis_cli = my_redis.get_redis_cli()
+        self.pipes = pipes
+        self.n_processes = CONFIG['n_processes']
+        self.n_threads = CONFIG['n_threads']
 
-    # 从主体加载模型
-    def load_model(self):
-        if CONFIG['use_frame'] == 'paddle':
-            self.model_path = CONFIG['paddle_model_path']
-        elif CONFIG['use_frame'] == 'pytorch':
-            self.model_path = CONFIG['pytorch_model_path']
-        else:
-            print('暂不支持所选框架')
-        try:
-            self.policy_value_net = PolicyValueNet(model_file=self.model_path)
-            print('已加载最新模型')
-        except:
-            self.policy_value_net = PolicyValueNet()
-            print('已加载初始模型')
-        self.mcts_player = MCTSPlayer(self.policy_value_net.policy_value_fn,
-                                      c_puct=self.c_puct,
-                                      n_playout=self.n_playout,
-                                      is_selfplay=1)
 
     def get_equi_data(self, play_data):
         """左右对称变换，扩充数据集一倍，加速一倍训练速度"""
@@ -75,54 +65,84 @@ class CollectPipeline:
             extend_data.append(zip_array.zip_state_mcts_prob((state_flip, mcts_prob_flip, winner)))
         return extend_data
 
-    def collect_selfplay_data(self, n_games=1):
+    def collect_selfplay_data(self,pipe ,n_games=1):
         # 收集自我对弈的数据
         for i in range(n_games):
-            version = self.redis_cli.get('update_model_version')
-            if self.update_model_version != version:
-                self.policy_value_net.update_state(self.model_path) # 从本体处加载最新模型
-                self.update_model_version = version
-                print('已更新模型参数')
-            winner, play_data = self.game.start_self_play(self.mcts_player, temp=self.temp, is_shown=False)
+            mcts_player = MCTSPlayer(pipe,
+                                     c_puct=self.c_puct,
+                                     n_playout=self.n_playout,
+                                     is_selfplay=1)
+
+
+            winner, play_data = self.game.start_self_play(mcts_player, temp=self.temp, is_shown=False)
             play_data = list(play_data)[:]
             self.episode_len = len(play_data)
             # 增加数据
             play_data = self.get_equi_data(play_data)
-            while True:
-                try:
-
-                    for d in play_data:
-                        self.redis_cli.rpush('train_data_buffer', pickle.dumps(d))
-                    self.redis_cli.incr('iters')
-                    self.iters = self.redis_cli.get('iters')
-                    print("存储完成")
-                    break
-                except:
-                    print("存储失败")
-                    time.sleep(1)
+            # 存储数据
+            self.push_play_data(play_data)
         return self.iters
+
+    # 存储数据
+    def push_play_data(self, play_data):
+        redis_cli = my_redis.get_redis_cli()
+        while True:
+            try:
+
+                for d in play_data:
+                    redis_cli.rpush('train_data_buffer', pickle.dumps(d))
+                redis_cli.incr('iters')
+                self.iters = redis_cli.get('iters')
+                print("存储完成")
+                break
+            except:
+                print("存储失败")
+                time.sleep(1)
+        redis_cli.close()
+
+
 
     def run(self):
         """开始收集数据"""
         try:
-            self.load_model()
+            print(str(current_process().pid)+"开始收集数据")
             while True:
-                iters = self.collect_selfplay_data()
+                iters = self.collect_selfplay_data(self.pipes[0])
                 print('batch i: {}, episode_len: {}'.format(
                     iters, self.episode_len))
         except KeyboardInterrupt:
             print('\n\rquit')
 
+    def close(self) -> None:
+        self.pipe.close()
+        super().close()
 
-collecting_pipeline = CollectPipeline(init_model='current_policy.model')
-collecting_pipeline.run()
 
-if CONFIG['use_frame'] == 'paddle':
-    collecting_pipeline = CollectPipeline(init_model='current_policy.model')
-    collecting_pipeline.run()
-elif CONFIG['use_frame'] == 'pytorch':
-    collecting_pipeline = CollectPipeline(init_model='current_policy.pkl')
-    collecting_pipeline.run()
-else:
-    print('暂不支持您选择的框架')
-    print('训练结束')
+if __name__ == '__main__':
+    freeze_support()
+    # pool = Pool(processes=CONFIG['n_processes'])
+    # m = Manager()
+    n_processes = CONFIG['n_processes']
+    n_threads = CONFIG['n_threads']
+    pipes = [] #[n_processes,n_threads]
+    for _ in range(n_processes):
+        pipes.append([(Pipe(duplex=False),Pipe(duplex=False)) for _ in range(n_threads)])
+
+    if CONFIG['use_frame'] == 'paddle':
+        for i in range(CONFIG['n_processes']):
+            collecting_pipeline = CollectPipeline(pipes[i])
+            collecting_pipeline.run()
+    elif CONFIG['use_frame'] == 'pytorch':
+        for i in range(CONFIG['n_processes']):
+            collecting_pipeline = CollectPipeline(pipes[i])
+            collecting_pipeline.start()
+    else:
+        print('暂不支持您选择的框架')
+        print('训练结束')
+    model = __import__("model_process", globals(), locals(), ['ModelProcess'])
+    model_process = model.ModelProcess(pipes)
+    model_process.start()
+    model_process.join()
+
+
+

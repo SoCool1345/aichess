@@ -127,14 +127,17 @@ class PolicyValueNet:
     def policy_value_fn(self, board_list):
         self.policy_value_net.eval()
         # 获取合法动作列表
-        legal_positions = [board.availables for board in board_list]
+        try:
+            legal_positions = [board.availables for board in board_list]
+        except:
+            print(board_list)
         current_state_list = [np.ascontiguousarray(board.current_state().reshape(-1, 9, 10, 9)).astype('float16') for board in board_list]
         if len(current_state_list) > 1:
             current_state = np.concatenate(current_state_list)
         elif len(current_state_list) == 1:
             current_state = current_state_list[0]
-        # else:
-        #     print(current_state.shape)
+        else:
+            return
         current_state = torch.as_tensor(current_state,device=self.device)
         # 使用神经网络进行预测
         with autocast():  # 半精度fp16
