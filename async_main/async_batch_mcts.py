@@ -1,10 +1,13 @@
 """蒙特卡洛树搜索"""
 import asyncio
-import multiprocessing.connection
+import queue
 
 import numpy as np
 import copy
 from config import CONFIG
+import torch
+
+from utils.timefn import timefn
 
 
 def softmax(x):
@@ -29,18 +32,20 @@ class TreeNode(object):
         self._parent = parent
         self._children = {} # 从动作到TreeNode的映射
         self._n_visits = 0  # 当前当前节点的访问次数
-        self._Q = 0         # 当前节点对应动作的平均动作价值
-        self._u = 0         # 当前节点的置信上限         # PUCT算法
-        self.W = 0
-        self._P = prior_p
+        self.W = torch.tensor(0.,dtype=torch.float16) # 当前节点的评估值
+        self._Q = torch.tensor(0.,dtype=torch.float16)         # 当前节点对应动作的平均动作价值
+        self._u = torch.tensor(0.,dtype=torch.float16)        # 当前节点的置信上限         # PUCT算法
+        self._P = torch.as_tensor(prior_p,dtype=torch.float16)
         self.is_expending = False
+
 
     def add_virtual_value(self, value):
         """
         计算节点的虚拟损失
         """
-        self._Q -= value
+        self.W -= value
         self._n_visits += value
+        self._Q = self.W / self._n_visits if self._n_visits > 0 else 0
 
 
 
@@ -75,8 +80,9 @@ class TreeNode(object):
         """
         # 统计访问次数
         self._n_visits += 1
+        self.W += leaf_value
         # 更新Q值，取决于所有访问次数的平均树，使用增量式更新方式
-        self._Q += 1.0 * (leaf_value - self._Q) / self._n_visits
+        self._Q = self.W / self._n_visits
 
     # 使用递归的方法对所有节点（当前节点对应的支线）进行一次更新
     def update_recursive(self, leaf_value):
@@ -93,27 +99,29 @@ class TreeNode(object):
     def is_root(self):
         return self._parent is None
 
-    @property
-    def P(self):
-        return self._P
-
 
 # 蒙特卡洛搜索树
 class MCTS(object):
 
-    def __init__(self, pipe, c_puct=5, n_playout=2000):
+    def __init__(self, queue, c_puct=5, n_playout=2000):
         """policy_value_fn: 接收board的盘面状态，返回落子概率和盘面评估得分"""
+        self.queue = queue
         self._root = TreeNode(None, 1.0)
-        self.pipe = pipe # (input,output)
         self._c_puct = c_puct
         self._n_playout = n_playout
 
         self.virtual_loss = 3
         self.search_batch_size = 16
+        self.loop = asyncio.get_event_loop()
 
 
+    async def push_queue(self, features):
+        future = self.loop.create_future()
+        await self.queue.put((features, future))
+        return future
 
-    def _playout(self, board):
+
+    async def _playout(self, board):
         """
         进行一次搜索，根据叶节点的评估值进行反向更新树节点的参数
         注意：state已就地修改，因此必须提供副本
@@ -129,8 +137,8 @@ class MCTS(object):
                     break
                 # 贪心算法选择下一步行动
                 action, node = node.select(self._c_puct)
-                if action not in _board.availables:
-                    print(action)
+                # if action not in _board.availables:
+                #     print("action:" + str(action))
                 _board.do_move(action)
             if not node.is_expending:
                 node.is_expending = True
@@ -142,14 +150,12 @@ class MCTS(object):
             if len(board_list) == 0:
                 return
         # 使用网络评估叶子节点，网络输出（动作，概率）元组p的列表以及当前玩家视角的得分[-1, 1]
-        input, output = self.pipe
-        conn1, conn2 = output # type: multiprocessing.connection.Connection
-        conn2.send(board_list)
-        conn1, conn2 = input
-        action_prob_list, leaf_value_list = conn1.recv()
-        # print(multiprocessing.current_process().pid)
+        future = await self.push_queue(board_list)
+        await future
+        action_prob_list, leaf_value_list = future.result()
+        # action_prob_list, leaf_value_list = self._policy(board_list)
 
-        for node, action_probs,leaf_value,_board in zip(node_list, action_prob_list,leaf_value_list,board_list):
+        for node, action_probs, leaf_value, _board in zip(node_list, action_prob_list, leaf_value_list, board_list):
             node.add_virtual_value(-self.virtual_loss)
             node.is_expending = False
             # 查看游戏是否结束
@@ -158,28 +164,29 @@ class MCTS(object):
                 node.expand(action_probs)
             else:
                 # 对于结束状态，将叶子节点的值换成1或-1
-                if winner == -1:    # Tie
+                if winner == -1:  # Tie
                     leaf_value = 0.0
                 else:
                     leaf_value = (
                         1.0 if winner == _board.get_current_player_id() else -1.0
                     )
+                leaf_value = torch.as_tensor([leaf_value], dtype=torch.float16)
             # 在本次遍历中更新节点的值和访问次数
             # 必须添加符号，因为两个玩家共用一个搜索树
-            node.update_recursive(-leaf_value)
+            node.update_recursive(-leaf_value[0])
 
 
 
 
 
-    def get_move_probs(self, board, temp=1e-3):
+    async def get_move_probs(self, board, temp=1e-3):
         """
         按顺序运行所有搜索并返回可用的动作及其相应的概率
         state:当前游戏的状态
         temp:介于（0， 1]之间的温度参数
         """
         for n in range(self._n_playout//self.search_batch_size):
-            self._playout(board)
+            await self._playout(board)
 
         # 跟据根节点处的访问计数来计算移动概率
         act_visits= [(act, node._n_visits)
@@ -205,8 +212,8 @@ class MCTS(object):
 # 基于MCTS的AI玩家
 class MCTSPlayer(object):
 
-    def __init__(self, pipe, c_puct=5, n_playout=2000, is_selfplay=0):
-        self.mcts = MCTS(pipe, c_puct, n_playout)
+    def __init__(self, queue, c_puct=5, n_playout=2000, is_selfplay=0):
+        self.mcts = MCTS(queue, c_puct, n_playout)
         self._is_selfplay = is_selfplay
         self.agent = "AI"
 
@@ -221,11 +228,11 @@ class MCTSPlayer(object):
         return 'MCTS {}'.format(self.player)
 
     # 得到行动
-    def get_action(self, board, temp=1e-3, return_prob=0):
+    async def get_action(self, board, temp=1e-3, return_prob=0):
         # 像alphaGo_Zero论文一样使用MCTS算法返回的pi向量
         move_probs = np.zeros(2086)
 
-        acts, probs = self.mcts.get_move_probs(board, temp)
+        acts, probs = await self.mcts.get_move_probs(board, temp)
         move_probs[list(acts)] = probs
         if self._is_selfplay:
             # 添加Dirichlet Noise进行探索（自我对弈需要）

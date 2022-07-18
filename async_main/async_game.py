@@ -1,8 +1,7 @@
 """棋盘游戏控制"""
 import multiprocessing
-import threading
-
 import numpy as np
+import torch
 import copy
 import time
 from config import CONFIG
@@ -749,7 +748,7 @@ class Board(object):
         if win:
             return True, winner
         elif self.kill_action >= CONFIG['kill_action']:  # 平局，没有赢家
-            return True, 0
+            return True, -1
         return False, -1
 
     def get_current_player_color(self):
@@ -800,7 +799,7 @@ class Game(object):
                 return winner
 
     # 使用蒙特卡洛树搜索开始自我对弈，存储游戏状态（状态，蒙特卡洛落子概率，胜负手）三元组用于神经网络训练
-    def start_self_play(self, player, is_shown=False, temp=1e-3):
+    async def start_self_play(self, player, is_shown=False, temp=1e-3):
         self.board.init_board()     # 初始化棋盘, start_player=1
         p1, p2 = 1, 2
         states, mcts_probs, current_players = [], [], []
@@ -810,12 +809,12 @@ class Game(object):
             _count += 1
             if _count % 20 == 0:
                 start_time = time.time()
-                move, move_probs = player.get_action(self.board,
+                move, move_probs = await player.get_action(self.board,
                                                      temp=temp,
                                                      return_prob=1)
-                print(threading.current_thread().getName(),':走一步要花: ', time.time() - start_time)
+                print(multiprocessing.current_process().pid,':走一步要花: ', time.time() - start_time)
             else:
-                move, move_probs = player.get_action(self.board,
+                move, move_probs = await player.get_action(self.board,
                                                      temp=temp,
                                                      return_prob=1)
             # 保存自我对弈的数据

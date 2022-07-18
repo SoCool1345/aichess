@@ -66,7 +66,6 @@ class Net(nn.Module):
         self.value_fc2 = nn.Linear(256, 1)
 
     # 定义前向传播
-    # @timefn
     def forward(self, x):
         # 公共头
         global_x = self.global_conv(x)
@@ -114,9 +113,6 @@ class PolicyValueNet:
 
         # 更新模型参数
 
-    def share_memory(self):
-        self.policy_value_net.share_memory()
-
     def update_state(self, model_file=None):
         if model_file:
             self.policy_value_net.load_state_dict(torch.load(model_file),strict=False)  # 加载模型参数
@@ -132,34 +128,34 @@ class PolicyValueNet:
 
     # 输入棋盘，返回每个合法动作的（动作，概率）元组列表，以及棋盘状态的分数
     # @timefn
-    def policy_value_fn(self, board_list):
+    def policy_value_fn(self,current_state_list,legal_positions):
         self.policy_value_net.eval()
         # 获取合法动作列表
-        try:
-            legal_positions = [board.availables for board in board_list]
-        except:
-            print(board_list)
-        current_state_list = [torch.as_tensor(board.current_state().astype('float16'),device=self.device) for board in board_list]
+        # try:
+        #     legal_positions = [board.availables for board in board_list]
+        # except:
+        #     print(board_list)
+        #
+        # current_state_list = [torch.as_tensor(board.current_state().astype('float16')) for board in board_list]
         if len(current_state_list) > 1:
             current_state = torch.stack(current_state_list)
         elif len(current_state_list) == 1:
             current_state = current_state_list[0].reshape(-1, 9, 10, 9)
         else:
             return
-        # current_state = torch.as_tensor(current_state)
+        current_state = current_state.to(self.device)
         # 使用神经网络进行预测
         with autocast():  # 半精度fp16
             log_act_probs, value = self.policy_value_net(current_state)
         log_act_probs, value = log_act_probs.cpu(), value.cpu()
         act_prob_list = []
         for i in range(len(log_act_probs)):
-            act_probs = np.exp(log_act_probs[i].numpy().astype('float16').flatten()) if CONFIG['use_frame'] == 'paddle' else np.exp(
-                log_act_probs[i].detach().numpy().astype('float16').flatten())
+            act_probs = torch.exp(log_act_probs[i].detach().flatten())
             # 只取出合法动作
-            act_probs = zip(legal_positions[i], act_probs[legal_positions[i]])
+            act_probs = zip(legal_positions[i], act_probs[legal_positions[i]].share_memory_())
             act_prob_list.append(act_probs)
         # 返回动作概率，以及状态价值
-        return np.asarray(act_prob_list), value.detach().numpy()
+        return act_prob_list, value.detach().share_memory_()
 
     # 保存模型
     def save_model(self, model_file):

@@ -201,14 +201,14 @@ start_player = 1
 
 player1 = MCTSPlayer(policy_value_net.policy_value_fn,
                      c_puct=5,
-                     n_playout=1200,
+                     n_playout=3000,
                      is_selfplay=0)
-# player2 = MCTSPlayer(policy_value_net.policy_value_fn,
-#                      c_puct=5,
-#                      n_playout=1200,
-#                      is_selfplay=0)
+player2 = MCTSPlayer(policy_value_net.policy_value_fn,
+                     c_puct=5,
+                     n_playout=2000,
+                     is_selfplay=0)
 
-player2 = MCTS_Pure(c_puct=5,n_playout=10)
+# player2 = MCTS_Pure(c_puct=5,n_playout=10)
 
 
 # player2 = Human()
@@ -235,6 +235,7 @@ while True:
         screen.blit(fire_image, fire_rect)
     # 更新界面
     pygame.display.update()
+
     # 不高于60帧
     clock.tick(60)
 
@@ -263,6 +264,7 @@ while True:
                             move_action = str(start_i_j[1]) + str(start_i_j[0]) + str(end_i_j[1]) + str(end_i_j[0])
                             # screen.blit(fire_image, fire_rect)
 
+
     if swicth_player:
         current_player = board.get_current_player_id()  # 红子对应的玩家id
         player_in_turn = players[current_player]  # 决定当前玩家的代理
@@ -274,6 +276,7 @@ while True:
         board.do_move(move)  # 棋盘做出改变
         swicth_player = True
         draw_fire = False
+        # print(board.state_deque[-1])
     elif player_in_turn.agent == 'HUMAN':
         draw_fire = True
         swicth_player = False
@@ -284,7 +287,7 @@ while True:
                 swicth_player = True
                 move_action = ''
                 draw_fire = False
-    pygame.display.update()
+    # pygame.display.update()
     end, winner = board.game_end()
     if end:
         if winner != -1:

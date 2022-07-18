@@ -1,23 +1,18 @@
 """自我对弈收集数据"""
+import torch.multiprocessing as mp
 import asyncio
-import random
 from collections import deque
 import copy
-import os
 import pickle
 import time
-from concurrent.futures import ThreadPoolExecutor
-
-import my_redis, redis
+import my_redis
 import zip_array
-from game import Board, Game, move_action2move_id, move_id2move_action, flip_map
-from batch_mcts import MCTSPlayer
+from async_main.async_game import Board, Game, move_action2move_id, move_id2move_action, flip_map
+from async_main.async_batch_mcts import MCTSPlayer
 from config import CONFIG
 
-if CONFIG['use_frame'] == 'paddle':
-    from paddle_net import PolicyValueNet
-elif CONFIG['use_frame'] == 'pytorch':
-    from pytorch_net import PolicyValueNet
+if CONFIG['use_frame'] == 'pytorch':
+    from async_main.async_pytorch_net import PolicyValueNet
 else:
     print('暂不支持您选择的框架')
 
@@ -36,9 +31,9 @@ class CollectPipeline:
         self.iters = 0
         self.update_model_version = 0
         self.redis_cli = my_redis.get_redis_cli()
-        self.n_threads = CONFIG['n_threads']
-        self.pool = ThreadPoolExecutor(max_workers=self.n_threads)
-
+        self.loop = asyncio.get_event_loop()
+        self.queue = asyncio.Queue()
+        self.lock = asyncio.Lock()
 
     # 从主体加载模型
     def load_model(self):
@@ -75,27 +70,45 @@ class CollectPipeline:
             extend_data.append(zip_array.zip_state_mcts_prob((state_flip, mcts_prob_flip, winner)))
         return extend_data
 
-    def collect_selfplay_data(self, n_games=1):
+        # 管理队列数据，一旦队列中有数据，就统一传给神经网络，获得预测结果
+
+    async def prediction_worker(self):
+
+        while True:
+            board_list = []
+            future_list = []
+            index_list = [0]
+            for _ in range(8):
+                features, future = await self.queue.get()
+                board_list.extend(features)
+                future_list.append(future)
+                index_list.append(len(board_list))
+            async with self.lock:
+                action_prob_list, leaf_value_list = await self.policy_value_net.policy_value_fn(board_list)
+            for i in range(len(future_list)):
+                future_list[i].set_result((action_prob_list[index_list[i]:index_list[i + 1]],
+                                          leaf_value_list[index_list[i]:index_list[i + 1]]))
+
+
+
+    async def collect_selfplay_data(self, n_games=1):
         # 收集自我对弈的数据
         for i in range(n_games):
             version = self.redis_cli.get('update_model_version')
             if self.update_model_version != version:
-                self.policy_value_net.update_state(self.model_path) # 从本体处加载最新模型
+                async with self.lock:
+                    self.policy_value_net.update_state(self.model_path)  # 从本体处加载最新模型
                 self.update_model_version = version
                 print('已更新模型参数')
 
-            mcts_player = MCTSPlayer(self.policy_value_net.policy_value_fn,
+            mcts_player = MCTSPlayer(self.queue,
                                      c_puct=self.c_puct,
                                      n_playout=self.n_playout,
                                      is_selfplay=1)
             # 象棋逻辑和棋盘
             board = Board()
             game = Game(board)
-            winner, play_data = game.start_self_play(mcts_player, temp=self.temp, is_shown=False)
-            #丢弃和棋
-            if winner == -1:
-                return
-
+            winner, play_data = await game.start_self_play(mcts_player, temp=self.temp, is_shown=False)
             play_data = list(play_data)[:]
             self.episode_len = len(play_data)
             # 增加数据
@@ -114,33 +127,27 @@ class CollectPipeline:
                 except:
                     print("存储失败")
                     time.sleep(1)
+        return self.iters
 
     def run(self):
         """开始收集数据"""
         try:
             self.load_model()
-            for i in range(self.n_threads):
-                self.pool.submit(self.run_forever)
+            while True:
+                coroutine_list = []
+                coroutine_list.append(self.prediction_worker())
+                for _ in range(16):
+                    coroutine_list.append(self.collect_selfplay_data())
+                self.loop.run_until_complete(asyncio.gather(*coroutine_list))
 
         except KeyboardInterrupt:
             print('\n\rquit')
 
-    def run_forever(self):
-        while True:
-            self.collect_selfplay_data()
 
-# collecting_pipeline = CollectPipeline(init_model='current_policy.model')
-# collecting_pipeline.run()
-
-if CONFIG['use_frame'] == 'paddle':
-    collecting_pipeline = CollectPipeline(init_model='current_policy.model')
-    collecting_pipeline.run()
-elif CONFIG['use_frame'] == 'pytorch':
-    collecting_pipeline = CollectPipeline(init_model='current_policy.pkl')
-    collecting_pipeline.run()
-else:
-    print('暂不支持您选择的框架')
-    print('训练结束')
-
-
-
+if __name__ == '__main__':
+    if CONFIG['use_frame'] == 'pytorch':
+        collecting_pipeline = CollectPipeline(init_model='current_policy.pkl')
+        collecting_pipeline.run()
+    else:
+        print('暂不支持您选择的框架')
+        print('训练结束')

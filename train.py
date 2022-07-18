@@ -35,7 +35,7 @@ class TrainPipeline:
         self.n_playout = CONFIG['play_out']
         self.c_puct = CONFIG['c_puct']
         self.learn_rate = 1e-3
-        self.lr_multiplier = 1  # 基于KL自适应的调整学习率
+        self.lr_multiplier = 2  # 基于KL自适应的调整学习率
         self.temp = 1.0
         self.batch_size = CONFIG['batch_size']  # 训练的batch大小
         self.epochs = CONFIG['epochs']  # 每次更新的train_step数量
