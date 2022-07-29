@@ -201,11 +201,11 @@ start_player = 1
 
 player1 = MCTSPlayer(policy_value_net.policy_value_fn,
                      c_puct=5,
-                     n_playout=3000,
+                     n_playout=2200,
                      is_selfplay=0)
 player2 = MCTSPlayer(policy_value_net.policy_value_fn,
                      c_puct=5,
-                     n_playout=2000,
+                     n_playout=1200,
                      is_selfplay=0)
 
 # player2 = MCTS_Pure(c_puct=5,n_playout=10)

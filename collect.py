@@ -1,9 +1,6 @@
 """自我对弈收集数据"""
-import asyncio
-import random
 from collections import deque
 import copy
-import os
 import pickle
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -128,9 +125,6 @@ class CollectPipeline:
     def run_forever(self):
         while True:
             self.collect_selfplay_data()
-
-# collecting_pipeline = CollectPipeline(init_model='current_policy.model')
-# collecting_pipeline.run()
 
 if CONFIG['use_frame'] == 'paddle':
     collecting_pipeline = CollectPipeline(init_model='current_policy.model')

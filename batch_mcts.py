@@ -1,5 +1,7 @@
 """蒙特卡洛树搜索"""
-import asyncio
+from numba import jit,uint8,float32,int8,optional,njit
+from numba.experimental import jitclass
+import numba as nb
 
 import numpy as np
 import copy
@@ -14,12 +16,13 @@ def softmax(x):
 
 
 # 定义叶子节点
+# @jitclass([('_parent', jitclass),('_n_visits', uint8),('W', float32), ('_Q', float32), ('_u', float32), ('_P', float32)])
 class TreeNode(object):
+
     """
     mcts树中的节点，树的子节点字典中，键为动作，值为TreeNode。记录当前节点选择的动作，以及选择该动作后会跳转到的下一个子节点。
     每个节点跟踪其自身的Q，先验概率P及其访问次数调整的u
     """
-
     def __init__(self, parent, prior_p):
         """
         :param parent: 当前节点的父节点
@@ -107,10 +110,11 @@ class MCTS(object):
         self._n_playout = n_playout
 
         self.virtual_loss = 3
-        self.search_batch_size = 16
+        self.search_batch_size = 24
 
 
     # @timefn
+    # @jit( nogil=True, cache=True)
     def _playout(self, board):
         """
         进行一次搜索，根据叶节点的评估值进行反向更新树节点的参数
@@ -139,6 +143,9 @@ class MCTS(object):
                 break
             if len(board_list) == 0:
                 return
+
+
+
         # 使用网络评估叶子节点，网络输出（动作，概率）元组p的列表以及当前玩家视角的得分[-1, 1]
 
         action_prob_list, leaf_value_list = self._policy(board_list)

@@ -158,6 +158,7 @@ class TrainPipeline:
                         if self.redis_cli.llen('train_data_buffer') > self.buffer_size:
                             for _ in range((int)(self.buffer_size/10)):
                                 self.redis_cli.lpop('train_data_buffer')
+                            self.data_buffer = my_redis.get_list_range(self.redis_cli,'train_data_buffer', 0,-1)
                         break
                     except:
                         time.sleep(5)

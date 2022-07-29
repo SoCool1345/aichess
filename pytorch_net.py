@@ -41,8 +41,8 @@ class Net(nn.Module):
     def __init__(self, num_channels=256, num_res_blocks=7):
         super().__init__()
         # 全局特征
-        self.global_conv = nn.Conv2d(in_channels=9, out_channels=512, kernel_size=(10, 9))
-        self.global_bn = nn.BatchNorm1d(512)
+        # self.global_conv = nn.Conv2d(in_channels=9, out_channels=512, kernel_size=(10, 9))
+        # self.global_bn = nn.BatchNorm1d(512)
         # 初始化特征
         self.conv_block = nn.Conv2d(in_channels=9, out_channels=num_channels, kernel_size=(3, 3), stride=(1, 1),
                                     padding=1)
@@ -51,13 +51,13 @@ class Net(nn.Module):
         # 残差块抽取特征
         self.res_blocks = nn.ModuleList([ResBlock(num_filters=num_channels) for _ in range(num_res_blocks)])
         # 策略头
-        self.global_policy_fc = nn.Linear(512, 2086)
+        # self.global_policy_fc = nn.Linear(512, 2086)
         self.policy_conv = nn.Conv2d(in_channels=num_channels, out_channels=16, kernel_size=(1, 1), stride=(1, 1))
         self.policy_bn = nn.BatchNorm2d(16)
         self.policy_act = nn.ReLU()
         self.policy_fc = nn.Linear(16 * 9 * 10, 2086)
         # 价值头
-        self.global_value_fc = nn.Linear(512, 256)
+        # self.global_value_fc = nn.Linear(512, 256)
         self.value_conv = nn.Conv2d(in_channels=num_channels, out_channels=8, kernel_size=(1, 1), stride=(1, 1))
         self.value_bn = nn.BatchNorm2d(8)
         self.value_act1 = nn.ReLU()
@@ -69,9 +69,9 @@ class Net(nn.Module):
     # @timefn
     def forward(self, x):
         # 公共头
-        global_x = self.global_conv(x)
-        global_x = torch.reshape(global_x, [-1, 512])
-        global_x = self.global_bn(global_x)
+        # global_x = self.global_conv(x)
+        # global_x = torch.reshape(global_x, [-1, 512])
+        # global_x = self.global_bn(global_x)
         x = self.conv_block(x)
         x = self.conv_block_bn(x)
         x = self.conv_block_act(x)
@@ -83,17 +83,19 @@ class Net(nn.Module):
         policy = self.policy_act(policy)
         policy = torch.reshape(policy, [-1, 16 * 10 * 9])
         policy = self.policy_fc(policy)
-        global_policy = self.policy_act(self.global_policy_fc(global_x))
-        policy = F.log_softmax(policy + global_policy)
+        # global_policy = self.policy_act(self.global_policy_fc(global_x))
+        # policy = F.log_softmax(policy + global_policy)
+        policy = F.log_softmax(policy)
         # 价值头
         value = self.value_conv(x)
         value = self.value_bn(value)
         value = self.value_act1(value)
         value = torch.reshape(value, [-1, 8 * 10 * 9])
-        global_value = self.value_act1(self.global_value_fc(global_x))
+        # global_value = self.value_act1(self.global_value_fc(global_x))
         value = self.value_fc1(value)
         value = self.value_act1(value)
-        value = self.value_fc2(value + global_value)
+        # value = self.value_fc2(value + global_value)
+        value = self.value_fc2(value)
         value = F.tanh(value)
 
         return policy, value
@@ -107,7 +109,7 @@ class PolicyValueNet:
         self.l2_const = 2e-3  # l2 正则化
         self.device = device
         torch.backends.cudnn.benchmark = True
-        self.policy_value_net = Net(num_res_blocks=7).to(self.device)
+        self.policy_value_net = Net(num_res_blocks=16).to(self.device)
         self.optimizer = torch.optim.Adam(params=self.policy_value_net.parameters(), lr=1e-3, betas=(0.9, 0.999),
                                           eps=1e-8, weight_decay=self.l2_const)
         self.update_state(model_file)
@@ -125,7 +127,8 @@ class PolicyValueNet:
     def policy_value(self, state_batch):
         self.policy_value_net.eval()
         state_batch = torch.as_tensor(state_batch,device=self.device)
-        log_act_probs, value = self.policy_value_net(state_batch)
+        with autocast():  # 半精度fp16
+            log_act_probs, value = self.policy_value_net(state_batch)
         log_act_probs, value = log_act_probs.cpu(), value.cpu()
         act_probs = np.exp(log_act_probs.detach().numpy())
         return act_probs, value.detach().numpy()

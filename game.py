@@ -646,10 +646,31 @@ def get_legal_moves(state_deque, current_player_color):
 class Board(object):
 
     def __init__(self):
-        self.state_list = copy.deepcopy(state_list_init)
+        # self.state_list = copy.deepcopy(state_list_init)
         self.game_start = False
-        self.winner = None
-        self.state_deque = copy.deepcopy(state_deque_init)
+        # self.winner = None
+        # self.state_deque = copy.deepcopy(state_deque_init)
+
+    def __deepcopy__(self, memodict={}):
+        new_board = Board()
+        new_board.state_deque = deque(maxlen=4)
+        for states in self.state_deque:
+            tmp = [[s for s in state] for state in states]
+            new_board.state_deque.append(tmp)
+        new_board.game_start = self.game_start
+        new_board.current_player_color = self.current_player_color
+        new_board.current_player_id = self.current_player_id
+
+        new_board.last_move = self.last_move
+        # 记录游戏中吃子的回合数
+        new_board.kill_action = self.kill_action
+        new_board.game_start = self.game_start
+        new_board.action_count = self.action_count
+        new_board.winner = self.winner
+        new_board.id2color = self.id2color
+        new_board.color2id = self.color2id
+        new_board.backhand_player = self.backhand_player
+        return new_board
 
     # 初始化棋盘的方法
     def init_board(self, start_player=1):   # 传入先手玩家的id
@@ -669,7 +690,7 @@ class Board(object):
         self.current_player_color = self.id2color[start_player]     # 红
         self.current_player_id = self.color2id['红']
         # 初始化棋盘状态
-        self.state_list = copy.deepcopy(state_list_init)
+        # self.state_list = copy.deepcopy(state_list_init)
         self.state_deque = copy.deepcopy(state_deque_init)
         # 初始化最后落子位置
         self.last_move = -1
@@ -705,6 +726,7 @@ class Board(object):
             _current_state[8][:, :] = 1.0
 
         return _current_state
+
 
     # 根据move对棋盘状态做出改变
     def do_move(self, move):
@@ -749,7 +771,7 @@ class Board(object):
         if win:
             return True, winner
         elif self.kill_action >= CONFIG['kill_action']:  # 平局，没有赢家
-            return True, 0
+            return True, -1
         return False, -1
 
     def get_current_player_color(self):
