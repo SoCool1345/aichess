@@ -13,7 +13,7 @@ CONFIG = {
     'game_batch_num': 6000,  # 训练更新的次数
     'use_frame': 'pytorch',  # paddle or pytorch根据自己的环境进行切换
     'train_update_interval': 1600,  #模型更新间隔时间
-    'redis_host': 'localhost',
+    'redis_host': '192.168.1.7',
     'redis_port': 6379,
     'redis_db': 0,
     'n_processes': 2, # self_play进程数

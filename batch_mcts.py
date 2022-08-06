@@ -1,7 +1,5 @@
 """蒙特卡洛树搜索"""
-from numba import jit,uint8,float32,int8,optional,njit
-from numba.experimental import jitclass
-import numba as nb
+
 
 import numpy as np
 import copy
@@ -37,6 +35,7 @@ class TreeNode(object):
         self._u = 0         # 当前节点的置信上限         # PUCT算法
         self._P = prior_p
         self.is_expending = False
+        self._board = None
 
     def add_virtual_value(self, value):
         """
@@ -126,6 +125,7 @@ class MCTS(object):
         for _ in range(self.search_batch_size):
             node = self._root
             _board = copy.deepcopy(board)
+            use_cache = False
             while True:
                 if node.is_leaf() or node.is_expending:
                     break
@@ -134,6 +134,14 @@ class MCTS(object):
                 # if action not in _board.availables:
                 #     print("action:" + str(action))
                 _board.do_move(action)
+                # if node._board is not None:
+                #     use_cache = True
+                #     _board = node._board
+                # else:
+                #     if use_cache:
+                #         _board = copy.deepcopy(_board)
+                #     _board.do_move(action)
+                #     node._board = copy.deepcopy(_board)
             if not node.is_expending:
                 node.is_expending = True
                 node.add_virtual_value(self.virtual_loss)

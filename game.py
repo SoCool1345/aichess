@@ -39,6 +39,12 @@ string2array = dict(红车=np.array([1, 0, 0, 0, 0, 0, 0]), 红马=np.array([0, 
                     黑炮=np.array([0, 0, 0, 0, 0, -1, 0]), 黑兵=np.array([0, 0, 0, 0, 0, 0, -1]),
                     一一=np.array([0, 0, 0, 0, 0, 0, 0]))
 
+#坐标翻转180度  (行,列)
+def decode_pos(x,y):
+    return 10-1-x,9-1-y
+#坐标翻转180度  (列,行)
+def decode_pos_y_x(y,x):
+    return 9-1-y,10-1-x
 
 def array2string(array):
     return list(filter(lambda string: (string2array[string] == array).all(), string2array))[0]
@@ -672,11 +678,45 @@ class Board(object):
         new_board.backhand_player = self.backhand_player
         return new_board
 
+
+
+
+    # 车马相士帅士相马车炮炮兵兵兵兵兵
+    # 车马象士将士象马车炮炮卒卒卒卒卒
+    def read_pos_txt(self,pos_txt,start_player):
+        dict1 = {0:'红车', 1:'红马', 2:'红相', 3:'红士',
+                4:'红将', 5:'红士', 6:'红相', 7:'红马',
+                8:'红车', 9:'红炮', 10:'红炮', 11:'红兵',
+                12:'红兵', 13:'红兵', 14:'红兵', 15:'红兵',
+                16:'黑车', 17:'黑马', 18:'黑相', 19:'黑士',
+                20:'黑将', 21:'黑士', 22:'黑相', 23:'黑马',
+                24:'黑车', 25:'黑炮', 26:'黑炮', 27:'黑卒',
+                28:'黑卒', 29:'黑卒', 30:'黑卒', 31:'黑卒'}
+        self.init_board(start_player=1)
+        self.state_deque = deque(maxlen=4)
+        state = [['一一'] * 9 for i in range(10)]
+        pos_index = 0
+        for man_index in range(32):
+            man_pos = pos_txt[pos_index:pos_index + 2]
+
+            if man_pos == '99':
+                pos_index += 2
+                continue
+            chess = dict1[man_index]
+            y,x = decode_pos_y_x(int(man_pos[0]),int(man_pos[1]))
+            # print(int(man_pos[0]), int(man_pos[1]), x, y)
+            state[x][y] = chess
+            pos_index += 2
+        self.state_deque.append(state)
+
+
+
     # 初始化棋盘的方法
     def init_board(self, start_player=1):   # 传入先手玩家的id
         # 增加一个颜色到id的映射字典，id到颜色的映射字典
         # 永远是红方先移动
         self.start_player = start_player
+
 
         if start_player == 1:
             self.id2color = {1: '红', 2: '黑'}
@@ -727,7 +767,33 @@ class Board(object):
 
         return _current_state
 
-
+    def do_move_txt(self, move_txt):
+        self.game_start = True  # 游戏开始
+        self.action_count += 1  # 移动次数加1
+        move_action = move_txt
+        start_y, start_x = decode_pos_y_x(int(move_action[0]),int(move_action[1]))
+        end_y, end_x = decode_pos_y_x(int(move_action[2]),int(move_action[3]))
+        state_list = copy.deepcopy(self.state_deque[-1])
+        # 判断是否吃子
+        if state_list[end_y][end_x] != '一一':
+            # 如果吃掉对方的帅，则返回当前的current_player胜利
+            self.kill_action = 0
+            if self.current_player_color == '黑' and state_list[end_y][end_x] == '红帅':
+                self.winner = self.color2id['黑']
+            elif self.current_player_color == '红' and state_list[end_y][end_x] == '黑帅':
+                self.winner = self.color2id['红']
+        else:
+            self.kill_action += 1
+        # 更改棋盘状态
+        print('start_y, start_x, end_y, end_x', start_y, start_x, end_y, end_x)
+        print( state_list[start_y][start_x],state_list[end_y][end_x])
+        state_list[end_y][end_x] = state_list[start_y][start_x]
+        state_list[start_y][start_x] = '一一'
+        self.current_player_color = '黑' if self.current_player_color == '红' else '红'  # 改变当前玩家
+        self.current_player_id = 1 if self.current_player_id == 2 else 2
+        # 记录最后一次移动的位置
+        self.last_move = move_action2move_id[move_action]
+        self.state_deque.append(state_list)
     # 根据move对棋盘状态做出改变
     def do_move(self, move):
         self.game_start = True  # 游戏开始

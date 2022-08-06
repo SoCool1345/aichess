@@ -208,7 +208,7 @@ player2 = MCTSPlayer(policy_value_net.policy_value_fn,
                      n_playout=1200,
                      is_selfplay=0)
 
-# player2 = MCTS_Pure(c_puct=5,n_playout=10)
+player2 = MCTS_Pure(c_puct=5,n_playout=10)
 
 
 # player2 = Human()
