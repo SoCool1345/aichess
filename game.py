@@ -684,14 +684,14 @@ class Board(object):
     # 车马相士帅士相马车炮炮兵兵兵兵兵
     # 车马象士将士象马车炮炮卒卒卒卒卒
     def read_pos_txt(self,pos_txt,start_player):
-        dict1 = {0:'红车', 1:'红马', 2:'红相', 3:'红士',
-                4:'红将', 5:'红士', 6:'红相', 7:'红马',
+        dict1 = {0:'红车', 1:'红马', 2:'红象', 3:'红士',
+                4:'红帅', 5:'红士', 6:'红象', 7:'红马',
                 8:'红车', 9:'红炮', 10:'红炮', 11:'红兵',
                 12:'红兵', 13:'红兵', 14:'红兵', 15:'红兵',
-                16:'黑车', 17:'黑马', 18:'黑相', 19:'黑士',
-                20:'黑将', 21:'黑士', 22:'黑相', 23:'黑马',
-                24:'黑车', 25:'黑炮', 26:'黑炮', 27:'黑卒',
-                28:'黑卒', 29:'黑卒', 30:'黑卒', 31:'黑卒'}
+                16:'黑车', 17:'黑马', 18:'黑象', 19:'黑士',
+                20:'黑帅', 21:'黑士', 22:'黑象', 23:'黑马',
+                24:'黑车', 25:'黑炮', 26:'黑炮', 27:'黑兵',
+                28:'黑兵', 29:'黑兵', 30:'黑兵', 31:'黑兵'}
         self.init_board(start_player=1)
         self.state_deque = deque(maxlen=4)
         state = [['一一'] * 9 for i in range(10)]
@@ -707,7 +707,8 @@ class Board(object):
             # print(int(man_pos[0]), int(man_pos[1]), x, y)
             state[x][y] = chess
             pos_index += 2
-        self.state_deque.append(state)
+        for _ in range(4):
+            self.state_deque.append(state)
 
 
 
@@ -768,32 +769,13 @@ class Board(object):
         return _current_state
 
     def do_move_txt(self, move_txt):
-        self.game_start = True  # 游戏开始
-        self.action_count += 1  # 移动次数加1
         move_action = move_txt
         start_y, start_x = decode_pos_y_x(int(move_action[0]),int(move_action[1]))
         end_y, end_x = decode_pos_y_x(int(move_action[2]),int(move_action[3]))
-        state_list = copy.deepcopy(self.state_deque[-1])
-        # 判断是否吃子
-        if state_list[end_y][end_x] != '一一':
-            # 如果吃掉对方的帅，则返回当前的current_player胜利
-            self.kill_action = 0
-            if self.current_player_color == '黑' and state_list[end_y][end_x] == '红帅':
-                self.winner = self.color2id['黑']
-            elif self.current_player_color == '红' and state_list[end_y][end_x] == '黑帅':
-                self.winner = self.color2id['红']
-        else:
-            self.kill_action += 1
-        # 更改棋盘状态
-        print('start_y, start_x, end_y, end_x', start_y, start_x, end_y, end_x)
-        print( state_list[start_y][start_x],state_list[end_y][end_x])
-        state_list[end_y][end_x] = state_list[start_y][start_x]
-        state_list[start_y][start_x] = '一一'
-        self.current_player_color = '黑' if self.current_player_color == '红' else '红'  # 改变当前玩家
-        self.current_player_id = 1 if self.current_player_id == 2 else 2
-        # 记录最后一次移动的位置
-        self.last_move = move_action2move_id[move_action]
-        self.state_deque.append(state_list)
+        move_action = str(start_x)+str(start_y)+str( end_x)+str( end_y)
+        self.do_move(move_action2move_id[move_action])
+        return move_action2move_id[move_action]
+
     # 根据move对棋盘状态做出改变
     def do_move(self, move):
         self.game_start = True  # 游戏开始
@@ -886,6 +868,39 @@ class Game(object):
                 else:
                     print("Game end. Tie")
                 return winner
+    #读取对局文件，生成数据集
+    def read_from_txt(self,move_list,pos_txt,winner,start_player = 1, is_shown=False):
+        self.board.init_board(start_player)
+        self.board.read_pos_txt(pos_txt,start_player)
+        assert len(move_list)%4 == 0
+        states, mcts_probs, current_players = [], [], []
+        index = 0
+        while True:
+
+            move_probs = np.zeros(len(move_action2move_id))
+
+            # 保存自我对弈的数据
+            states.append(self.board.current_state())
+            mcts_probs.append(move_probs)
+            current_players.append(self.board.current_player_id)
+            # 执行一步落子
+            move_id = self.board.do_move_txt(move_list[index:index+4])
+
+            move_probs[move_id] = 1
+            index += 4
+            if index>= len(move_list):
+                # 从每一个状态state对应的玩家的视角保存胜负信息
+                winner_z = np.zeros(len(current_players))
+                if winner != -1:
+                    winner_z[np.array(current_players) == winner] = 1.0
+                    winner_z[np.array(current_players) != winner] = -1.0
+                if is_shown:
+                    if winner != -1:
+                        print("Game end. Winner is:", winner)
+                    else:
+                        print('Game end. Tie')
+
+                return winner, zip(states, mcts_probs, winner_z)
 
     # 使用蒙特卡洛树搜索开始自我对弈，存储游戏状态（状态，蒙特卡洛落子概率，胜负手）三元组用于神经网络训练
     def start_self_play(self, player, is_shown=False, temp=1e-3):

@@ -9,11 +9,12 @@ CONFIG = {
     'train_data_buffer_path': 'train_data_buffer.pkl',   # 数据容器的路径
     'batch_size': 64,  # 每次更新的train_step数量
     'kl_targ': 0.02,  # kl散度控制
+    'learn_rate': 1e-4,  # 学习率
     'epochs' : 50,  # 每次更新的train_step数量
     'game_batch_num': 6000,  # 训练更新的次数
     'use_frame': 'pytorch',  # paddle or pytorch根据自己的环境进行切换
     'train_update_interval': 1600,  #模型更新间隔时间
-    'redis_host': '192.168.1.7',
+    'redis_host': 'localhost',
     'redis_port': 6379,
     'redis_db': 0,
     'n_processes': 2, # self_play进程数

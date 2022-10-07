@@ -34,7 +34,7 @@ class TrainPipeline:
         self.game = Game(self.board)
         self.n_playout = CONFIG['play_out']
         self.c_puct = CONFIG['c_puct']
-        self.learn_rate = 1e-3
+        self.learn_rate = CONFIG['learn_rate']
         self.lr_multiplier = 2  # 基于KL自适应的调整学习率
         self.temp = 1.0
         self.batch_size = CONFIG['batch_size']  # 训练的batch大小

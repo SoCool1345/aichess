@@ -109,7 +109,7 @@ class PolicyValueNet:
         self.l2_const = 2e-3  # l2 正则化
         self.device = device
         torch.backends.cudnn.benchmark = True
-        self.policy_value_net = Net(num_res_blocks=16).to(self.device)
+        self.policy_value_net = Net(num_res_blocks=10).to(self.device)
         self.optimizer = torch.optim.Adam(params=self.policy_value_net.parameters(), lr=1e-3, betas=(0.9, 0.999),
                                           eps=1e-8, weight_decay=self.l2_const)
         self.update_state(model_file)
